@@ -1,0 +1,156 @@
+1.最基本的Android.mk
+LOCAL_PATH变量的定义开头，定位源文件位置。因为该变量设置为硬编码值不合适，所以Android构建系统提供一个名为my-dir的宏功能。通过将该变量设置为my-dir宏功能的返回值，可以将其放在当前目录下。
+
+将CLEAR_VARS设置为clear-vars.mk片段的位置，包含这个片段可以清除除了LOCAL_PATHY以外的LOCAL_<name>变量，例如LOCAL_MODULE 和LOCAL_SRC_FILES
+
+include $(CLEAR_VARS)
+
+因为LOCAL_<name>是全局变量，清除 它们可以避免冲突，每一个原生组件被称为一个模块。
+
+LOCAL_MODULE 给模块设定名字
+
+LOCAL_SRC_FILES 构建这个模块所需要的源文件列表。
+
+NSK构建系统将BUILD_SHARED_LIBRARY变量设置为build-shared-library.mk文件的保存位置，该Makefile变短包含了将源文件构建和组装成共享库的必要过程。
+
+include $(BUILD_SHARED_LIBRARY)
+
+以上是hello-jni的Android.mk的内容
+
+2.构建多个共享库
+LOCAL_PATH := $(call my-dir)
+#lib1
+include $(CLEAR_VARS)
+LOCAL_MODULE    := hello-jni
+LOCAL_SRC_FILES := hello-jni.c
+include $(BUILD_SHARED_LIBRARY)
+
+#lib2
+include $(CLEAR_VARS)
+LOCAL_MODULE    := hello-jni2
+LOCAL_SRC_FILES := hello-jni2.c
+include $(BUILD_SHARED_LIBRARY)
+
+3.构建静态库
+实际的Android程序并不直接使用静态库，并且应用程序包中也不包含静态库。静态库可以用来构建共享库。例如，在将第三方代码添加到原生项目中时，不用直接将第三方源代码包括在原生项目中，而是将第三方代码编译成静态库然后并入共享库。
+LOCAL_PATH := $(call my-dir)
+
+include $(CLEAR_VARS)
+
+#第三方AVI库
+LOCAL_MODULE    := avilib
+LOCAL_SRC_FILES := avilib.c platform_posix.c
+
+include $(CLEAR_VARS)
+
+LOCAL_MODULE    := module
+LOCAL_SRC_FILES := module.c
+
+在将第三方代码模块生成静态库后，共享库就可以将它的模块名称添加到LOCAL_STATIC_LIBRARIES变量中来使用该模块
+
+LOCAL_STATIC_LIBRARIES := avilib
+
+include $(BUILD_SHARED_LIBRARY)
+
+4.用共享库来共享通用模块
+多个模块需要统一个模块，为了不让代码过于庞大，就将那个通用模块编译成动态库的形式供需要的模块连接。
+
+LOCAL_PATH := $(call my-dir)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE    := avilib
+LOCAL_SRC_FILES := avilib.c platform_posix.c
+include $(BUILD_SHARED_LIBRARY) #把它编译成动态库
+
+#原生模块1
+include $(CLEAR_VARS)
+
+LOCAL_MODULE    := module
+LOCAL_SRC_FILES := module.c
+
+LOCAL_SHARED_LIBRARIES := avilib
+
+include $(BUILD_SHARED_LIBRARY)
+
+#原生模块2
+。。。
+
+
+5.LOCAL_PATH := $(call my-dir)
+include $(CLEAR_VARS)
+LOCAL_MODULE    := module
+LOCAL_SRC_FILES := module.c
+LOCAL_SHARED_LIBRARIES := avilib
+
+include $(BUILD_SHARED_LIBRARY)
+
+$(call import-module, transcode/avilib)
+
+6.用prebuilt库
+通用模块的源代码，构建系统简单的把这些源文件包含在NDK项目中并每次构建它们。
+R5以后，提供对Prebuilt库的支持，优点：
+1.想在不发布源码的情况下将你的模块发布给他人
+2.想使用共享模块的预建版来加速构建过程
+5.LOCAL_PATH := $(call my-dir)
+LOCAL_MODULE := avilib
+LOCAL_SRC_FILES := libavilib.so
+
+include $(PREBUILT_SHARED_LIBRARY)
+
+LOCAL_SRC_FILES指向的不熟源文件，而是实际Prebuilt库相对于LOCAL_PATH的位置。
+
+PREBUILT_SHARED_LIBRARY变量指向prebuilt-shared-library.mk片段。它什么都没有构建，但是它将Prebuilt库复制到NDK项目的libs目录下。通过使用PREBUILT_STATIC_LIBRARY，静态库可以像共享库一样被用作Prebuilt库，NDK项目可以像使用普通共享库一样来使用Prebuilt库了
+
+......
+LOCAL_SHARED_LIBRARIES := avilib
+....
+
+7.构建独立的可执行文件
+为了方便测试和进行快速原型设计，Android NDK也支持构建独立的可执行文件，这些可执行文件是不用打包成APK文件就可以复制到Android设备上的常规LInux应用程序，而且它们可以直接执行，不需要通过Java应用程序加载。
+
+LOCAL_PATH := $(call my-dir)
+#lib1
+include $(CLEAR_VARS)
+LOCAL_MODULE    := hello-jni
+LOCAL_SRC_FILES := hello-jni.c
+include $(BUILD_EXECUTABLE)  BUILD_EXECUTABLE指向build-executable.mk片段，包含了在Android平台生成可执行文件的必要步骤。独立可执行文件与模块相同的名字放在libs目录下。
+
+8.其他构建系统变量
+LOCAL_CPP_EXTENSION：C++源文件的默认扩展名是.cpp，这个变量可以用来为C++源代码指定一个或者多个扩展名
+LOCAL_CPP_EXTENSION ：= .cpp .cxx
+LOCAL_CPP_FEATURES 用来指明模块所依赖的具体C++特性，如RTTI，exceptions
+
+LOCAL_CPP_FEATURES ：=rtti
+
+LOCAL_C_INCLUDES ,NDK安装目录的相对路径，用来搜索头文件
+
+LOCAL_CFALGS 一组可选的编译器标志，在编译C和C++源文件的时候会被传送给编译器
+
+LOCAL_CPP_CFALGS一组可选的编译器标志 在只编译C++源文件的时候会被传送给编译器
+
+LOCAL_LDLIBS 链接标志的可选列表。当对目标文件进行链接以生成输出文件时将该标志传给链接器，它主要用于传送要进行动态链接的系统库列表，例如，要与Android NDK日志库链接
+LOCAL_LDLIBS := llog
+
+构建系统宏
+all-subdir-makefiles 返回当前目录的所有子目录Android.mk文件列表，例如，包含以下命令可以将子目录下的所有Android.mk文件包含在构建过程中
+
+this-makefile返回当前Android.mk文件的路径
+
+9.定义新变量
+LOCAL_和NDK_开头的预留给Android NDK构建系统使用，我们尽量用MY_开头的
+
+10.条件操作
+这个Makefile一样的
+
+
+
+Application.mk
+可选构建文件，和Android.mk一样在jni目录下，目的是描述应用程序需要哪些模块；它也定义所有模块的通用变量。 Makefile片段
+
+APP_MODULES 构建Andoird.mk文件声明的所有模块。
+APP_CPPFLAGS 编译任何模块的C和C++源文件是这些标志都会传给编译器
+APP_CFLAGS C++时会传给编译器
+APP_STL 最小的STL运行库
+
+使用ndk-build脚本启动Android NDK构建系统
+默认情况下，ndk-build脚本应该在主项目目录下执行。 -C参数可以用于指定命令行中NDK项目的位置，这样依赖ndk-build
